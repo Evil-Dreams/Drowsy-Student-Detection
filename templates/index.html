@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drowsiness Detection</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        h1 {
+            color: #333;
+        }
+        img {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            margin-top: 20px;
+            width: 640px;
+            height: 480px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Drowsiness Detection</h1>
+        <img src="{{ url_for('video_feed') }}" alt="Video Feed">
+    </div>
+
+    <script>
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        let isBeeping = false;
+
+        function playBeep() {
+            if (isBeeping) return;
+            isBeeping = true;
+
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(880, audioContext.currentTime); // A high-pitched beep (A5 note)
+            gainNode.gain.setValueAtTime(1, audioContext.currentTime);
+
+            oscillator.start();
+            setTimeout(() => {
+                oscillator.stop();
+                isBeeping = false;
+            }, 100); // Beep for 100ms
+        }
+
+        setInterval(() => {
+            fetch('/alert_status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.alert) {
+                        playBeep();
+                    }
+                });
+        }, 500); // Check every half-second
+    </script>
+</body>
+</html>
