@@ -31,19 +31,80 @@
             width: 640px;
             height: 480px;
         }
+        .alert-banner {
+            display: none;
+            background-color: #d32f2f;
+            color: #fff;
+            padding: 10px 16px;
+            border-radius: 6px;
+            font-weight: 700;
+            margin-top: 10px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0%   { transform: scale(1); }
+            50%  { transform: scale(1.02); }
+            100% { transform: scale(1); }
+        }
+        .button {
+            background: #1976d2;
+            color: #fff;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 12px;
+        }
+        .button:disabled {
+            opacity: 0.6;
+            cursor: default;
+        }
+        /* Full-screen flash overlay */
+        .flash-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 9999;
+            display: none;
+            background: #000;
+        }
+        .flash-overlay.active {
+            display: block;
+            animation: flashBW 1s linear 1;
+        }
+        @keyframes flashBW {
+            0%   { background: #000; }
+            25%  { background: #fff; }
+            50%  { background: #000; }
+            75%  { background: #fff; }
+            100% { background: #000; }
+        }
     </style>
 </head>
 <body>
+    <div id="flashOverlay" class="flash-overlay"></div>
     <div class="container">
         <h1>Drowsiness Detection</h1>
+        <div id="alertBanner" class="alert-banner">DROWSINESS ALERT!</div>
+        <button id="enableAudioBtn" class="button" type="button">Enable Sound</button>
         <img src="{{ url_for('video_feed') }}" alt="Video Feed">
     </div>
 
     <script>
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         let isBeeping = false;
+        const enableBtn = document.getElementById('enableAudioBtn');
+        const banner = document.getElementById('alertBanner');
+        const flashOverlay = document.getElementById('flashOverlay');
+        let prevAlert = false;
+        let lastFlashAt = 0;
 
-        function playBeep() {
+        function playBeep(duration = 300, frequency = 880) {
+            if (audioContext.state !== 'running') return; // requires user gesture
             if (isBeeping) return;
             isBeeping = true;
 
@@ -54,24 +115,57 @@
             gainNode.connect(audioContext.destination);
 
             oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(880, audioContext.currentTime); // A high-pitched beep (A5 note)
-            gainNode.gain.setValueAtTime(1, audioContext.currentTime);
+            oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+            gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
 
             oscillator.start();
             setTimeout(() => {
                 oscillator.stop();
                 isBeeping = false;
-            }, 100); // Beep for 100ms
+            }, duration);
+        }
+
+        async function ensureAudioUnlocked() {
+            try {
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                }
+            } catch (e) {
+                // ignore
+            }
+            enableBtn.style.display = (audioContext.state === 'running') ? 'none' : 'inline-block';
+        }
+
+        enableBtn.addEventListener('click', ensureAudioUnlocked);
+        document.addEventListener('keydown', ensureAudioUnlocked);
+        document.addEventListener('click', ensureAudioUnlocked);
+
+        function triggerScreenFlash() {
+            const now = Date.now();
+            if (now - lastFlashAt < 900) return; // throttle
+            flashOverlay.classList.remove('active');
+            // force reflow to restart animation
+            void flashOverlay.offsetWidth;
+            flashOverlay.classList.add('active');
+            lastFlashAt = now;
+            setTimeout(() => flashOverlay.classList.remove('active'), 1100);
         }
 
         setInterval(() => {
             fetch('/alert_status')
                 .then(response => response.json())
                 .then(data => {
-                    if (data.alert) {
+                    const active = !!data.alert;
+                    banner.style.display = active ? 'block' : 'none';
+                    if (active) {
                         playBeep();
+                        if (!prevAlert) {
+                            triggerScreenFlash(); // only on rising edge
+                        }
                     }
-                });
+                    prevAlert = active;
+                })
+                .catch(() => {});
         }, 500); // Check every half-second
     </script>
 </body>
